@@ -1,0 +1,148 @@
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sequence
+      POSTGRES_USER: sequence
+      POSTGRES_PASSWORD: sequence_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sequence -d sequence"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Services ──────────────────────────────────────────────────────────────────
+  # Each service mounts its source directory and runs via `go run .`
+  # go mod download creates go.sum on first run; subsequent starts skip the download (cache volume)
+
+  auth-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/auth-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8001:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_DSN: postgres://sequence:sequence_dev@postgres:5432/sequence?sslmode=disable
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: dev-secret-change-in-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  game-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/game-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8002:8080"
+      - "8003:8081"
+    environment:
+      HTTP_PORT: "8080"
+      WS_PORT: "8081"
+      POSTGRES_DSN: postgres://sequence:sequence_dev@postgres:5432/sequence?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  matchmaking-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/matchmaking-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8004:8080"
+    environment:
+      PORT: "8080"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  leaderboard-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/leaderboard-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8005:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_DSN: postgres://sequence:sequence_dev@postgres:5432/sequence?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/notification-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8006:8080"
+    environment:
+      PORT: "8080"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  analytics-service:
+    image: golang:1.22-alpine
+    working_dir: /app
+    volumes:
+      - ./services/analytics-service:/app
+      - go_cache:/root/go/pkg/mod
+    command: sh -c "go mod download all && go run ."
+    ports:
+      - "8007:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_DSN: postgres://sequence:sequence_dev@postgres:5432/sequence?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  go_cache:
