@@ -1,0 +1,13 @@
+# Normalize line endings to LF in the repo, checkout as-is on Windows
+* text=auto eol=lf
+
+# Force LF for shell scripts (must be LF to run on Linux/macOS)
+*.sh text eol=lf
+
+# Binary files — no line ending conversion
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar.gz binary
