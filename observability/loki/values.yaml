@@ -1,0 +1,54 @@
+# Loki Helm values (log aggregation)
+# Install: helm install loki grafana/loki-stack -n monitoring -f observability/loki/values.yaml
+#
+# How Loki works:
+# - Promtail (DaemonSet on every node) collects container logs and pushes to Loki
+# - Loki stores logs indexed by labels (namespace, pod, container, app)
+# - Grafana queries Loki with LogQL for log visualization
+# - Unlike Elasticsearch, Loki does NOT index log content — only labels (much cheaper)
+
+loki:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClassName: managed-premium
+    size: 50Gi
+  config:
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      retention_period: 720h  # 30 days
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 32
+  nodeSelector:
+    workload: platform
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+
+promtail:
+  enabled: true
+  config:
+    snippets:
+      pipelineStages:
+        - cri: {}
+        - json:
+            expressions:
+              level: level
+              msg: msg
+              service: service
+        - labels:
+            level:
+            service:
+        - drop:
+            expression: ".*health.*"  # Drop health check logs to reduce volume
+            drop_counter_reason: healthcheck_noise

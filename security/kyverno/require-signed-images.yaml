@@ -1,0 +1,48 @@
+# Kyverno Policy: Require Cosign-signed images in production
+# Why: Supply chain security — only images built by our CI/CD pipeline
+# (and therefore scanned by Trivy + signed by Cosign) can run in production.
+# An attacker who compromises ACR credentials cannot deploy an unsigned image.
+#
+# How Cosign keyless signing works:
+# 1. GitHub Actions runs on OIDC-enabled GitHub runner
+# 2. Cosign requests an OIDC token from GitHub (proves "this ran in CI")
+# 3. Cosign exchanges OIDC token for a short-lived signing cert from Sigstore Fulcio
+# 4. Cosign signs the image manifest with the cert
+# 5. Signature + cert are stored in ACR as an OCI artifact
+# 6. Kyverno verifies the signature at pod admission using Sigstore Rekor transparency log
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-signed-images
+  annotations:
+    policies.kyverno.io/title: Require Signed Images
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-image-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["sequence-prod"]
+      verifyImages:
+        - imageReferences:
+            - "acrsequenceprod.azurecr.io/auth-service:*"
+            - "acrsequenceprod.azurecr.io/game-service:*"
+            - "acrsequenceprod.azurecr.io/matchmaking-service:*"
+            - "acrsequenceprod.azurecr.io/leaderboard-service:*"
+            - "acrsequenceprod.azurecr.io/notification-service:*"
+            - "acrsequenceprod.azurecr.io/analytics-service:*"
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subject: "https://github.com/Callmeanurag/Sequence/.github/workflows/*.yml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          mutateDigest: true   # Rewrite image tag to digest (immutable reference)
+          verifyDigest: true
+          required: true

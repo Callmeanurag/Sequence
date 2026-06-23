@@ -1,0 +1,58 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Go
+*/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+kubeconfig
+kubeconfig.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+target/
+build/
+*.log
+
+# Helm
+charts/*.tgz
+
+# Node (if frontend added)
+node_modules/
+npm-debug.log*
+
+# ArgoCD generated files
+gitops/applications/*.yaml.bak

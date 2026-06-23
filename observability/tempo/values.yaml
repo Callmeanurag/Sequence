@@ -1,0 +1,41 @@
+# Tempo Helm values (distributed tracing)
+# Install: helm install tempo grafana/tempo -n monitoring -f observability/tempo/values.yaml
+#
+# How distributed tracing works with Istio:
+# - Istio Envoy sidecars automatically generate trace spans for every HTTP request
+# - Spans include: service name, URL, status code, duration, upstream/downstream services
+# - Traces are sent to Tempo via OTLP or Zipkin protocol
+# - Grafana queries Tempo to show the full trace for any request across services
+# - No application code changes needed for basic tracing (Istio handles it)
+
+tempo:
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+  persistence:
+    enabled: true
+    storageClassName: managed-premium
+    size: 20Gi
+  nodeSelector:
+    workload: platform
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+
+# Istio integration: configure Istio to send traces to Tempo
+# Add to Istio mesh config:
+# meshConfig:
+#   enableTracing: true
+#   defaultConfig:
+#     tracing:
+#       zipkin:
+#         address: tempo.monitoring:9411
+#   extensionProviders:
+#     - name: tempo
+#       opentelemetry:
+#         service: tempo.monitoring.svc.cluster.local
+#         port: 4317

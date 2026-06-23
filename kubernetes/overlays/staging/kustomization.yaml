@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: sequence-staging
+
+resources:
+  - ../../base/auth-service
+  - ../../base/game-service
+  - ../../base/matchmaking-service
+  - ../../base/leaderboard-service
+  - ../../base/notification-service
+  - ../../base/analytics-service
+  - namespace.yaml
+
+images:
+  - name: acrsequenceprod.azurecr.io/auth-service
+    newTag: "staging"
+  - name: acrsequenceprod.azurecr.io/game-service
+    newTag: "staging"
+  - name: acrsequenceprod.azurecr.io/matchmaking-service
+    newTag: "staging"
+  - name: acrsequenceprod.azurecr.io/leaderboard-service
+    newTag: "staging"
+  - name: acrsequenceprod.azurecr.io/notification-service
+    newTag: "staging"
+  - name: acrsequenceprod.azurecr.io/analytics-service
+    newTag: "staging"

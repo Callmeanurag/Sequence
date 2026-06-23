@@ -1,0 +1,69 @@
+# ApplicationSet: generates one ArgoCD Application per (service, environment) combination
+# Result: 6 services × 3 environments = 18 Applications, all managed by this one resource
+#
+# Why ApplicationSets matter (interview answer):
+# "Instead of writing 18 nearly-identical Application YAML files, ApplicationSet generates
+#  them from a matrix of services and environments. Any new service added to the list
+#  automatically gets deployed to all environments. This is the DRY principle for GitOps."
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sequence-services
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - service: auth-service
+                - service: game-service
+                - service: matchmaking-service
+                - service: leaderboard-service
+                - service: notification-service
+                - service: analytics-service
+          - list:
+              elements:
+                - environment: dev
+                  namespace: sequence-dev
+                  targetRevision: develop
+                - environment: staging
+                  namespace: sequence-staging
+                  targetRevision: staging
+                - environment: prod
+                  namespace: sequence-prod
+                  targetRevision: HEAD
+  template:
+    metadata:
+      name: "{{service}}-{{environment}}"
+      labels:
+        service: "{{service}}"
+        environment: "{{environment}}"
+    spec:
+      project: "sequence-{{environment}}"
+      source:
+        repoURL: https://github.com/Callmeanurag/Sequence.git
+        targetRevision: "{{targetRevision}}"
+        path: "kubernetes/overlays/{{environment}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+      revisionHistoryLimit: 5
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas

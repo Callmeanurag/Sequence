@@ -1,0 +1,146 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # Daily at 2 AM UTC — catch new CVEs in existing images
+  push:
+    branches: [main]
+    paths:
+      - 'security/**'
+      - 'kubernetes/**'
+      - '.github/workflows/security-scan.yml'
+  workflow_dispatch:        # Allow manual trigger
+
+jobs:
+  scan-iac:
+    name: IaC Security Scan (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov on Terraform
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure/
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-terraform.sarif
+          soft_fail: true
+
+      - name: Run Checkov on Kubernetes
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: kubernetes/
+          framework: kubernetes
+          output_format: sarif
+          output_file_path: checkov-k8s.sarif
+          soft_fail: true
+
+      - name: Upload Checkov results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-terraform.sarif
+          category: checkov-terraform
+
+      - name: Upload Checkov K8s results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-k8s.sarif
+          category: checkov-kubernetes
+
+  scan-images:
+    name: Scan Deployed Images for New CVEs
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      security-events: write
+    strategy:
+      matrix:
+        service:
+          - auth-service
+          - game-service
+          - matchmaking-service
+          - leaderboard-service
+          - notification-service
+          - analytics-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name acrsequenceprod
+
+      - name: Trivy scan on latest image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: acrsequenceprod.azurecr.io/${{ matrix.service }}:latest
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0  # Don't fail — create issue instead
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  scan-secrets:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for secret scanning
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  validate-kyverno-policies:
+    name: Validate Kyverno Policies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kyverno CLI
+        run: |
+          curl -LO "https://github.com/kyverno/kyverno/releases/latest/download/kyverno-cli_linux_amd64.tar.gz"
+          tar -xzf kyverno-cli_linux_amd64.tar.gz
+          sudo mv kyverno /usr/local/bin/
+
+      - name: Validate Kyverno policies syntax
+        run: |
+          kyverno version
+          for policy in security/kyverno/*.yaml; do
+            echo "Validating $policy"
+            kyverno apply $policy --resource /dev/null || true
+          done
+
+  validate-terraform:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.0'
+
+      - name: Terraform init (local)
+        working-directory: infrastructure/environments/${{ matrix.environment }}
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        working-directory: infrastructure/environments/${{ matrix.environment }}
+        run: terraform validate

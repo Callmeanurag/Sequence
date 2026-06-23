@@ -1,0 +1,78 @@
+# Circuit breaker + load balancing config for game-service
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: game-service
+  namespace: sequence-prod
+spec:
+  host: game-service
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+    loadBalancer:
+      simple: LEAST_CONN  # WebSocket: least connection is better than round-robin
+  subsets:
+    - name: stable
+      labels:
+        version: v1
+    - name: canary
+      labels:
+        version: v2
+---
+# Circuit breaker for auth-service
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: auth-service
+  namespace: sequence-prod
+spec:
+  host: auth-service
+  trafficPolicy:
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 33
+    loadBalancer:
+      simple: ROUND_ROBIN
+---
+# External service entry for Azure Redis (outside cluster)
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: azure-redis
+  namespace: sequence-prod
+spec:
+  hosts:
+    - "redis-sequence-prod.redis.cache.windows.net"
+  ports:
+    - number: 6380
+      name: redis-tls
+      protocol: TCP
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+# External service entry for Azure PostgreSQL
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: azure-postgresql
+  namespace: sequence-prod
+spec:
+  hosts:
+    - "psql-sequence-prod.postgres.database.azure.com"
+  ports:
+    - number: 5432
+      name: postgres
+      protocol: TCP
+  resolution: DNS
+  location: MESH_EXTERNAL

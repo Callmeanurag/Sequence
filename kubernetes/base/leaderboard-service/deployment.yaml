@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-service
+  labels:
+    app: leaderboard-service
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: leaderboard-service
+  template:
+    metadata:
+      labels:
+        app: leaderboard-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: leaderboard-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: leaderboard-service
+          image: acrsequenceprod.azurecr.io/leaderboard-service:latest
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: leaderboard-service-config
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: leaderboard-service-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-service
+  labels:
+    app: leaderboard-service
+spec:
+  selector:
+    app: leaderboard-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: leaderboard-service
+  annotations:
+    azure.workload.identity/client-id: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leaderboard-service-config
+data:
+  NATS_URL: "nats://nats.sequence-prod.svc.cluster.local:4222"
+  LEADERBOARD_REFRESH_INTERVAL: "60"  # Refresh materialized view every 60s
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: leaderboard-service-secrets
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    clientID: ""
+    keyvaultName: ""
+    tenantId: ""
+    objects: |
+      array:
+        - |
+          objectName: leaderboard-db-connection-string
+          objectType: secret
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: leaderboard-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: leaderboard-service
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: leaderboard-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: leaderboard-service

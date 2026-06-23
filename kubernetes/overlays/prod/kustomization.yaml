@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: sequence-prod
+
+resources:
+  - ../../base/auth-service
+  - ../../base/game-service
+  - ../../base/matchmaking-service
+  - ../../base/leaderboard-service
+  - ../../base/notification-service
+  - ../../base/analytics-service
+  - namespace.yaml
+
+images:
+  - name: acrsequenceprod.azurecr.io/auth-service
+    newTag: "latest"  # CI/CD pipeline updates this tag
+  - name: acrsequenceprod.azurecr.io/game-service
+    newTag: "latest"
+  - name: acrsequenceprod.azurecr.io/matchmaking-service
+    newTag: "latest"
+  - name: acrsequenceprod.azurecr.io/leaderboard-service
+    newTag: "latest"
+  - name: acrsequenceprod.azurecr.io/notification-service
+    newTag: "latest"
+  - name: acrsequenceprod.azurecr.io/analytics-service
+    newTag: "latest"
+
+patches:
+  - path: patches/auth-service-workload-identity.yaml
+    target:
+      kind: ServiceAccount
+      name: auth-service
+  - path: patches/game-service-workload-identity.yaml
+    target:
+      kind: ServiceAccount
+      name: game-service
+  - path: patches/secretproviderclass-prod.yaml
+    target:
+      kind: SecretProviderClass

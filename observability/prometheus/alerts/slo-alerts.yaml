@@ -1,0 +1,101 @@
+groups:
+  - name: slo-burn-rate
+    interval: 30s
+    rules:
+      # Fast burn: error budget burning 14x faster than allowed — page immediately
+      - alert: ErrorBudgetFastBurn_AuthService
+        expr: |
+          (
+            1 - sum(rate(http_requests_total{service="auth-service",code!~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total{service="auth-service"}[1h]))
+          ) > 14 * (1 - 0.999)
+        for: 2m
+        labels:
+          severity: critical
+          service: auth-service
+        annotations:
+          summary: "auth-service burning error budget at 14x rate"
+          description: "Error rate {{ $value | humanizePercentage }} exceeds 14x budget burn threshold. At this rate, 28-day budget exhausts in 48 hours."
+          runbook_url: "https://github.com/Callmeanurag/Sequence/blob/main/docs/runbooks/game-service-high-error-rate.md"
+          dashboard_url: "http://grafana.sequence.internal/d/slo-overview"
+
+      # Fast burn: game-service (more tolerant SLO = higher threshold)
+      - alert: ErrorBudgetFastBurn_GameService
+        expr: |
+          (
+            1 - sum(rate(http_requests_total{service="game-service",code!~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total{service="game-service"}[1h]))
+          ) > 14 * (1 - 0.995)
+        for: 2m
+        labels:
+          severity: critical
+          service: game-service
+        annotations:
+          summary: "game-service burning error budget at 14x rate"
+          runbook_url: "https://github.com/Callmeanurag/Sequence/blob/main/docs/runbooks/game-service-high-error-rate.md"
+
+      # Slow burn: 5x rate over 6 hours — create ticket
+      - alert: ErrorBudgetSlowBurn_GameService
+        expr: |
+          (
+            1 - sum(rate(http_requests_total{service="game-service",code!~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total{service="game-service"}[6h]))
+          ) > 5 * (1 - 0.995)
+        for: 60m
+        labels:
+          severity: warning
+          service: game-service
+        annotations:
+          summary: "game-service slowly burning error budget (5x rate for 6h)"
+          description: "At this rate, budget exhausts in ~5 days."
+
+  - name: latency-slo
+    rules:
+      - alert: LatencySLOBreach_GameService
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_bucket{service="game-service",le="0.2"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count{service="game-service"}[5m]))
+          ) < 0.99
+        for: 5m
+        labels:
+          severity: warning
+          service: game-service
+        annotations:
+          summary: "game-service p99 latency SLO at risk"
+          description: "Less than 99% of requests completing within 200ms"
+
+  - name: availability
+    rules:
+      - alert: PodCrashLoopBackOff
+        expr: |
+          kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff", namespace=~"sequence-.*"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} is in CrashLoopBackOff"
+          runbook_url: "https://github.com/Callmeanurag/Sequence/blob/main/docs/runbooks/pod-crashloopbackoff.md"
+
+      - alert: DeploymentReplicasMismatch
+        expr: |
+          kube_deployment_spec_replicas{namespace=~"sequence-.*"}
+          != kube_deployment_status_available_replicas{namespace=~"sequence-.*"}
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deployment {{ $labels.deployment }} has fewer available replicas than desired"
+
+      - alert: ArgoCDApplicationOutOfSync
+        expr: |
+          argocd_app_info{sync_status="OutOfSync"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ArgoCD application {{ $labels.name }} is OutOfSync for 10 minutes"

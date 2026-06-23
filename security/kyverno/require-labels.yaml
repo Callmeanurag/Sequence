@@ -1,0 +1,27 @@
+# Kyverno Policy: Require standard labels on all workloads
+# Why: Labels enable cost attribution, alert routing, and operational filtering.
+# A pod without labels is invisible to dashboards and automation.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-standard-labels
+  annotations:
+    policies.kyverno.io/title: Require Standard Labels
+    policies.kyverno.io/severity: low
+spec:
+  validationFailureAction: Audit  # Audit only — don't break existing workloads
+  background: true
+  rules:
+    - name: check-app-label
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet]
+              namespaces: ["sequence-prod", "sequence-staging", "sequence-dev"]
+      validate:
+        message: "Deployments must have 'app' and 'app.kubernetes.io/part-of' labels."
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+              app.kubernetes.io/part-of: "?*"

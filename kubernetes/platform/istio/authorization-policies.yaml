@@ -1,0 +1,81 @@
+# Default deny-all: no service can talk to any other service
+# unless explicitly allowed below. Zero-trust networking.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: sequence-prod
+spec: {}  # Empty spec = deny all
+---
+# Allow Istio Ingress Gateway to reach auth-service
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-auth
+  namespace: sequence-prod
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+      to:
+        - operation:
+            methods: ["POST", "GET", "DELETE"]
+            paths: ["/api/v1/auth/*"]
+---
+# Allow Ingress to reach game-service
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-game
+  namespace: sequence-prod
+spec:
+  selector:
+    matchLabels:
+      app: game-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+---
+# Allow game-service to call matchmaking-service
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-game-to-matchmaking
+  namespace: sequence-prod
+spec:
+  selector:
+    matchLabels:
+      app: matchmaking-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/sequence-prod/sa/game-service"
+---
+# Allow Prometheus to scrape metrics from all services
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: sequence-prod
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/monitoring/sa/prometheus-server"
+      to:
+        - operation:
+            ports: ["9090"]
+            paths: ["/metrics"]

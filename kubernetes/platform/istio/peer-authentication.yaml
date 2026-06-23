@@ -1,0 +1,20 @@
+# Enforce strict mTLS in production namespace
+# All inter-pod communication must use mutual TLS — no plaintext allowed
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: sequence-prod
+spec:
+  mtls:
+    mode: STRICT
+---
+# Permissive mode in dev to allow easier debugging
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: sequence-dev
+spec:
+  mtls:
+    mode: PERMISSIVE

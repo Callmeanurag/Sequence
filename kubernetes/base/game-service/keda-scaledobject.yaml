@@ -1,0 +1,40 @@
+# KEDA ScaledObject: scale game-service based on active WebSocket connections
+# This demonstrates event-driven autoscaling — a rare and impressive K8s skill.
+#
+# How it works:
+# 1. game-service exports a custom Prometheus metric: game_service_active_connections
+# 2. KEDA's Prometheus scaler queries this metric every 30 seconds
+# 3. If connections > threshold * current_replicas, KEDA triggers scale-up
+# 4. HPA is DISABLED when KEDA manages scaling (they conflict)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: game-service-scaledobject
+spec:
+  scaleTargetRef:
+    name: game-service
+  minReplicaCount: 3
+  maxReplicaCount: 20
+  cooldownPeriod: 300   # Seconds to wait before scale-down after scale-up
+  pollingInterval: 30   # Check metrics every 30 seconds
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+        metricName: game_service_active_connections
+        # Scale up when connections per pod exceeds 400 (max 500 per pod * safety buffer)
+        threshold: "400"
+        query: |
+          sum(game_service_active_websocket_connections)
+          /
+          count(kube_pod_info{pod=~"game-service-.*"})
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: game-service-pdb
+spec:
+  minAvailable: 2  # Keep at least 2 pods running (active games need continuity)
+  selector:
+    matchLabels:
+      app: game-service

@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-service
+  labels:
+    app: game-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: game-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: game-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: game-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60  # Allow active WebSocket games to finish
+      containers:
+        - name: game-service
+          image: acrsequenceprod.azurecr.io/game-service:latest
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: websocket
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: HTTP_PORT
+              value: "8080"
+            - name: WS_PORT
+              value: "8081"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: MAX_WEBSOCKET_CONNECTIONS
+              value: "500"  # Per pod — KEDA scales based on this
+          envFrom:
+            - configMapRef:
+                name: game-service-config
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]  # Allow Istio to drain connections
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: game-service-secrets
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: game-service

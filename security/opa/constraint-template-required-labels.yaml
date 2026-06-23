@@ -1,0 +1,59 @@
+# OPA Gatekeeper: ConstraintTemplate + Constraint for required labels
+# This shows OPA as an alternative/complement to Kyverno.
+# In this project, Kyverno is primary; OPA demonstrates knowledge of both tools.
+#
+# How OPA Gatekeeper works:
+# 1. ConstraintTemplate defines the policy LOGIC in Rego language
+# 2. Constraint creates an INSTANCE of the template with parameters
+# 3. Gatekeeper webhook evaluates the Rego against every admission request
+# 4. If Rego returns violations, the request is denied (Deny) or warned (Warn)
+
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+  annotations:
+    description: Requires specified labels on resources
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+
+        violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("Resource is missing required labels: %v", [missing])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: require-app-label-deployments
+spec:
+  enforcementAction: warn   # warn in staging, deny in prod
+  match:
+    kinds:
+      - apiGroups: [apps]
+        kinds: [Deployment]
+    namespaces:
+      - sequence-prod
+      - sequence-staging
+  parameters:
+    labels:
+      - app
+      - app.kubernetes.io/part-of

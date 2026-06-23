@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-service
+  labels:
+    app: game-service
+spec:
+  selector:
+    app: game-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: websocket
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: game-service
+  annotations:
+    azure.workload.identity/client-id: ""  # Set via Kustomize overlay
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-service-config
+data:
+  REDIS_HOST: "redis-sequence.redis.cache.windows.net"
+  REDIS_PORT: "6380"
+  REDIS_TLS: "true"
+  GAME_STATE_TTL: "14400"  # 4 hours in seconds
+  NATS_URL: "nats://nats.sequence-prod.svc.cluster.local:4222"
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: game-service-secrets
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    clientID: ""
+    keyvaultName: ""
+    tenantId: ""
+    objects: |
+      array:
+        - |
+          objectName: game-db-connection-string
+          objectType: secret
+        - |
+          objectName: redis-access-key
+          objectType: secret

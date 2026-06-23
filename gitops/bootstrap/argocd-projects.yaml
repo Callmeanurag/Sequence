@@ -1,0 +1,84 @@
+# ArgoCD AppProjects: define RBAC boundaries per environment
+# AppProjects restrict which repos, clusters, and namespaces each Application can target.
+# This prevents a dev Application from accidentally deploying to prod namespace.
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sequence-prod
+  namespace: argocd
+spec:
+  description: Production environment — Sequence platform services
+  sourceRepos:
+    - https://github.com/Callmeanurag/Sequence.git
+  destinations:
+    - namespace: sequence-prod
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: ReplicaSet
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: ConfigMap
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: keda.sh
+      kind: ScaledObject
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: secrets-store.csi.x-k8s.io
+      kind: SecretProviderClass
+  roles:
+    - name: prod-deployer
+      description: CI/CD pipeline role — can sync apps but not delete projects
+      policies:
+        - p, proj:sequence-prod:prod-deployer, applications, sync, sequence-prod/*, allow
+        - p, proj:sequence-prod:prod-deployer, applications, get, sequence-prod/*, allow
+      groups:
+        - sequence-platform-team
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sequence-staging
+  namespace: argocd
+spec:
+  description: Staging environment
+  sourceRepos:
+    - https://github.com/Callmeanurag/Sequence.git
+  destinations:
+    - namespace: sequence-staging
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sequence-dev
+  namespace: argocd
+spec:
+  description: Development environment
+  sourceRepos:
+    - https://github.com/Callmeanurag/Sequence.git
+    - '*'   # Dev allows any source for experimentation
+  destinations:
+    - namespace: sequence-dev
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'

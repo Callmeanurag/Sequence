@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: auth-service-prod
+  namespace: argocd
+  labels:
+    environment: prod
+    service: auth-service
+spec:
+  project: sequence-prod
+  source:
+    repoURL: https://github.com/Callmeanurag/Sequence.git
+    targetRevision: HEAD
+    path: kubernetes/overlays/prod
+    kustomize:
+      images:
+        - acrsequenceprod.azurecr.io/auth-service:latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sequence-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true  # Use server-side apply for better conflict resolution
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 5  # Keep last 5 revisions for rollback
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore replica count changes (HPA manages this)

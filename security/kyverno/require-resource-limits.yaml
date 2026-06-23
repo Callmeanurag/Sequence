@@ -1,0 +1,37 @@
+# Kyverno Policy: Require CPU and memory limits on all containers
+# Why: Without limits, one misbehaving pod can consume all node resources (noisy neighbor).
+# This policy blocks any pod without explicit resource limits at admission time.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      All containers must have CPU and memory limits defined.
+      Without limits, containers can exhaust node resources and cause noisy-neighbor issues.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-container-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["sequence-prod", "sequence-staging"]
+      validate:
+        message: "CPU and memory limits are required for all containers in production namespaces."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+            initContainers:
+              - =(resources):
+                  =(limits):
+                    =(memory): "?*"
+                    =(cpu): "?*"

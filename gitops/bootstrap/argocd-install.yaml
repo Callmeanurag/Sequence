@@ -1,0 +1,18 @@
+# ArgoCD namespace — created before Helm install
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    app.kubernetes.io/name: argocd
+---
+# ArgoCD Helm values for production-grade install
+# Install with: helm install argocd argo/argo-cd -n argocd -f gitops/bootstrap/argocd-values.yaml
+# (This file is documentation of the install command — actual values are in argocd-values.yaml)
+#
+# Post-install steps:
+# 1. Get initial admin password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+# 2. Port-forward: kubectl port-forward svc/argocd-server -n argocd 8080:443
+# 3. Login: argocd login localhost:8080
+# 4. Change password: argocd account update-password
+# 5. Apply root-app: kubectl apply -f gitops/bootstrap/root-app.yaml

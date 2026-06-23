@@ -1,0 +1,31 @@
+# App-of-Apps: This single ArgoCD Application manages all other Applications.
+# Deploy this once with: kubectl apply -f gitops/bootstrap/root-app.yaml
+# ArgoCD will then reconcile all child apps automatically.
+#
+# Pattern explained:
+# root-app (this file) → watches gitops/applications/
+#   → auth-service-app    → watches kubernetes/overlays/prod/auth-service/
+#   → game-service-app    → watches kubernetes/overlays/prod/game-service/
+#   → ... (one per service per environment)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.io  # Cascade delete: deleting this deletes all children
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Callmeanurag/Sequence.git
+    targetRevision: HEAD
+    path: gitops/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true     # Delete resources removed from Git
+      selfHeal: true  # Revert manual changes (drift correction)
+    syncOptions:
+      - CreateNamespace=true

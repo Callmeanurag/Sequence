@@ -1,0 +1,157 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matchmaking-service
+  labels:
+    app: matchmaking-service
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: matchmaking-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: matchmaking-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: matchmaking-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: matchmaking-service
+          image: acrsequenceprod.azurecr.io/matchmaking-service:latest
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: matchmaking-service-config
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: matchmaking-service-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matchmaking-service
+  labels:
+    app: matchmaking-service
+spec:
+  selector:
+    app: matchmaking-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: matchmaking-service
+  annotations:
+    azure.workload.identity/client-id: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: matchmaking-service-config
+data:
+  REDIS_HOST: "redis-sequence.redis.cache.windows.net"
+  REDIS_PORT: "6380"
+  REDIS_TLS: "true"
+  GAME_SERVICE_URL: "http://game-service.sequence-prod.svc.cluster.local"
+  MATCH_TIMEOUT_SECONDS: "300"
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: matchmaking-service-secrets
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    clientID: ""
+    keyvaultName: ""
+    tenantId: ""
+    objects: |
+      array:
+        - |
+          objectName: redis-access-key
+          objectType: secret
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: matchmaking-service-scaledobject
+spec:
+  scaleTargetRef:
+    name: matchmaking-service
+  minReplicaCount: 2
+  maxReplicaCount: 8
+  triggers:
+    - type: redis
+      metadata:
+        address: "redis-sequence.redis.cache.windows.net:6380"
+        listName: matchmaking_queue
+        listLength: "5"
+        enableTLS: "true"
+      authenticationRef:
+        name: matchmaking-redis-auth
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: matchmaking-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: matchmaking-service

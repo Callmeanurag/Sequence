@@ -1,0 +1,43 @@
+# OPA Gatekeeper: Disallow :latest image tag in production
+# Using :latest means you can't reproduce a deployment — you don't know exactly
+# which image version is running. Production must use immutable digest references.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowlatesttag
+  annotations:
+    description: Disallows container images using the :latest tag
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowLatestTag
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowlatesttag
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          endswith(container.image, ":latest")
+          msg := sprintf("Container '%v' uses the :latest tag which is not allowed in production. Use a specific version or digest.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not contains(container.image, ":")
+          msg := sprintf("Container '%v' has no image tag. Specify a version or digest.", [container.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowLatestTag
+metadata:
+  name: disallow-latest-tag-prod
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [apps]
+        kinds: [Deployment, StatefulSet, DaemonSet]
+    namespaces:
+      - sequence-prod
