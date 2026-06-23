@@ -8,7 +8,7 @@ FROM golang:1.22-alpine AS builder
 WORKDIR /app
 
 # Download dependencies first (cached layer — only invalidated when go.mod changes)
-COPY go.mod go.sum ./
+COPY go.mod ./
 RUN go mod download
 
 # Copy source and build
