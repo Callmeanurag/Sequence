@@ -1,4 +1,4 @@
-﻿module github.com/Callmeanurag/Sequence/services/matchmaking-service
+module github.com/Callmeanurag/Sequence/services/matchmaking-service
 
 go 1.22
 

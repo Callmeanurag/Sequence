@@ -1,4 +1,4 @@
-﻿module github.com/Callmeanurag/Sequence/services/analytics-service
+module github.com/Callmeanurag/Sequence/services/analytics-service
 
 go 1.22
 

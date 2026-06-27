@@ -1,4 +1,4 @@
-﻿module github.com/Callmeanurag/Sequence/services/notification-service
+module github.com/Callmeanurag/Sequence/services/notification-service
 
 go 1.22
 

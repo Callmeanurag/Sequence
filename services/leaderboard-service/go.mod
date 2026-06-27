@@ -1,4 +1,4 @@
-﻿module github.com/Callmeanurag/Sequence/services/leaderboard-service
+module github.com/Callmeanurag/Sequence/services/leaderboard-service
 
 go 1.22
 
